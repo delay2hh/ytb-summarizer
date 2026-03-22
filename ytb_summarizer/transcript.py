@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from typing import Callable
 
-from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound, TranscriptsDisabled
+from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api._transcripts import TranscriptList
 
 from .utils import extract_video_id, clean_transcript
 
@@ -56,29 +57,38 @@ def get_playlist_entries(url: str, progress_cb: Callable[[str], None] | None = N
 
 
 def fetch_transcript(url: str, lang: str = "en") -> str:
-    """Fetch transcript text for a video. Tries requested lang, then auto-generated."""
+    """Fetch transcript text for a video. Tries requested lang, then falls back."""
     video_id = extract_video_id(url)
     if not video_id:
         raise ValueError(f"Cannot parse video ID from URL: {url}")
 
+    api = YouTubeTranscriptApi()
+
     try:
-        # Try preferred language first
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-
-        try:
-            transcript = transcript_list.find_transcript([lang])
-        except NoTranscriptFound:
-            # Fall back to any available transcript
-            try:
-                transcript = transcript_list.find_generated_transcript([lang, "en"])
-            except NoTranscriptFound:
-                transcript = next(iter(transcript_list))
-
-        entries = transcript.fetch()
-        text = " ".join(e.text for e in entries)
+        # Try preferred language first via fetch()
+        fetched = api.fetch(video_id, languages=[lang, "en"])
+        entries = fetched.to_raw_data()
+        text = " ".join(e["text"] for e in entries)
         return clean_transcript(text)
 
-    except TranscriptsDisabled:
-        raise RuntimeError(f"字幕已禁用，无法获取视频 {video_id} 的字幕。")
+    except Exception:
+        pass
+
+    # Fallback: list available transcripts and pick any
+    try:
+        transcript_list: TranscriptList = api.list(video_id)
+        try:
+            transcript = transcript_list.find_transcript([lang, "en"])
+        except Exception:
+            try:
+                transcript = transcript_list.find_generated_transcript([lang, "en"])
+            except Exception:
+                transcript = next(iter(transcript_list))
+
+        fetched = transcript.fetch()
+        entries = fetched.to_raw_data()
+        text = " ".join(e["text"] for e in entries)
+        return clean_transcript(text)
+
     except Exception as e:
         raise RuntimeError(f"获取字幕失败: {e}")
