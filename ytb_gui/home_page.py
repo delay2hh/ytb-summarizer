@@ -1,6 +1,7 @@
 """Home page: URL input, quick-setting cards, progress log, Markdown preview."""
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -9,7 +10,7 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QComboBox, QFrame,
     QSplitter, QPlainTextEdit, QProgressBar,
-    QTextBrowser, QApplication, QSizePolicy,
+    QTextBrowser, QApplication, QSizePolicy, QFileDialog,
 )
 from PySide6.QtCore import Qt, Signal
 
@@ -122,7 +123,24 @@ class HomePage(QWidget):
         cards_row.addWidget(lang_card)
 
         root.addLayout(cards_row)
-        root.addSpacing(24)
+        root.addSpacing(10)
+
+        # ── Output directory row ──────────────────────────────────────────────
+        out_row = QHBoxLayout()
+        out_row.setSpacing(8)
+        out_lbl = QLabel("Save to:")
+        out_lbl.setObjectName("card_label_small")
+        out_lbl.setFixedWidth(60)
+        out_row.addWidget(out_lbl)
+        self.output_edit = QLineEdit()
+        self.output_edit.setPlaceholderText("Output directory…")
+        out_row.addWidget(self.output_edit, stretch=1)
+        browse_out_btn = QPushButton("Browse…")
+        browse_out_btn.setFixedWidth(80)
+        browse_out_btn.clicked.connect(self._browse_output)
+        out_row.addWidget(browse_out_btn)
+        root.addLayout(out_row)
+        root.addSpacing(16)
 
         # ── Work area (progress + preview) ─────────────────────────────────
         self.work_area = QSplitter(Qt.Orientation.Horizontal)
@@ -206,6 +224,8 @@ class HomePage(QWidget):
         if tidx >= 0:
             self.template_combo.setCurrentIndex(tidx)
 
+        self.output_edit.setText(conf.get("output_dir", str(cfg.summaries_dir())))
+
         lang = conf.get("transcript_lang", "en")
         for i in range(self.lang_combo.count()):
             if self.lang_combo.itemData(i) == lang:
@@ -245,7 +265,7 @@ class HomePage(QWidget):
         if base_url:
             provider_config["base_url"] = base_url
 
-        output_dir = conf.get("output_dir", str(cfg.summaries_dir()))
+        output_dir = self.output_edit.text().strip() or str(cfg.summaries_dir())
         transcript_lang = self.lang_combo.currentData() or "en"
         template = self.template_combo.currentText()
 
@@ -254,6 +274,7 @@ class HomePage(QWidget):
         conf["model"] = model
         conf["template"] = template
         conf["transcript_lang"] = transcript_lang
+        conf["output_dir"] = output_dir
         cfg.save(conf)
 
         self.start_requested.emit({
@@ -324,11 +345,17 @@ a{{color:#91aaeb}}
         if not p.exists():
             return
         if sys.platform == "win32":
-            subprocess.Popen(["notepad", str(p)])
+            os.startfile(str(p))          # opens with default app (Notepad / VS Code / etc.)
         elif sys.platform == "darwin":
             subprocess.Popen(["open", str(p)])
         else:
             subprocess.Popen(["xdg-open", str(p)])
+
+    def _browse_output(self):
+        d = QFileDialog.getExistingDirectory(self, "Select Output Directory",
+                                             self.output_edit.text())
+        if d:
+            self.output_edit.setText(d)
 
     def _copy_all(self):
         QApplication.clipboard().setText(self._current_content)

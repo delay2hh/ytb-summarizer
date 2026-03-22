@@ -1,6 +1,7 @@
 """History panel backed by SQLite."""
 from __future__ import annotations
 
+import os
 import sqlite3
 import subprocess
 import sys
@@ -123,7 +124,7 @@ class HistoryPanel(QWidget):
         if not p.exists():
             return
         if sys.platform == "win32":
-            subprocess.Popen(["notepad", str(p)])
+            os.startfile(str(p))
         elif sys.platform == "darwin":
             subprocess.Popen(["open", str(p)])
         else:
