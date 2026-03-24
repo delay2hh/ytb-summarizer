@@ -44,7 +44,8 @@ class SummarizeWorker(QThread):
             # Step 1: Get video info
             self._log("⏳ 正在获取视频信息...")
             self.progress_pct.emit(10)
-            info = get_video_info(self.url)
+            bilibili_sessdata = cfg.load().get("bilibili_sessdata", "")
+            info = get_video_info(self.url, bilibili_sessdata=bilibili_sessdata)
             title = info["title"]
             self._log(f"✓ 视频标题: {title}")
             self.progress_pct.emit(25)
@@ -54,7 +55,10 @@ class SummarizeWorker(QThread):
 
             # Step 2: Fetch transcript
             self._log(f"⏳ 正在提取字幕 (语言: {self.transcript_lang})...")
-            transcript = fetch_transcript(self.url, lang=self.transcript_lang)
+            transcript = fetch_transcript(
+                self.url, lang=self.transcript_lang,
+                bilibili_sessdata=bilibili_sessdata,
+            )
             word_count = len(transcript.split())
             self._log(f"✓ 字幕提取完成 ({word_count} 词)")
             self.progress_pct.emit(50)

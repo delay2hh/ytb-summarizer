@@ -57,7 +57,7 @@ class HomePage(QWidget):
 
         self.url_input = QLineEdit()
         self.url_input.setObjectName("url_input")
-        self.url_input.setPlaceholderText("https://www.youtube.com/watch?v=...")
+        self.url_input.setPlaceholderText("https://www.youtube.com/watch?v=...  或  https://www.bilibili.com/video/BV...")
         self.url_input.setMinimumHeight(50)
         self.url_input.returnPressed.connect(self._on_start)
         url_row.addWidget(self.url_input, stretch=1)

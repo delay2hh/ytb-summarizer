@@ -32,13 +32,16 @@ def summaries_dir() -> Path:
 
 def load() -> dict:
     path = config_file()
+    defaults = _defaults()
     if path.exists():
         try:
             with open(path, encoding="utf-8") as f:
-                return json.load(f)
+                saved = json.load(f)
+            # Merge: new default keys are always available even in old config files
+            defaults.update(saved)
         except Exception:
             pass
-    return _defaults()
+    return defaults
 
 
 def save(data: dict) -> None:
@@ -58,4 +61,5 @@ def _defaults() -> dict:
         "output_dir": str(summaries_dir()),
         "transcript_lang": "en",
         "summary_lang": "zh",
+        "bilibili_sessdata": "",
     }

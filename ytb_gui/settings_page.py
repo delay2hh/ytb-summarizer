@@ -100,6 +100,30 @@ class SettingsPage(QWidget):
         bu_row.addWidget(save_bu_btn)
         layout.addWidget(self.bu_row_widget)
 
+        # Bilibili SESSDATA
+        bili_row = QHBoxLayout()
+        bili_lbl = _label("B站 SESSDATA")
+        bili_lbl.setFixedWidth(110)
+        bili_row.addWidget(bili_lbl)
+        self.sessdata_edit = QLineEdit()
+        self.sessdata_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self.sessdata_edit.setPlaceholderText("可选，用于访问需登录的视频字幕")
+        bili_row.addWidget(self.sessdata_edit)
+        show_sd_btn = QPushButton("Show")
+        show_sd_btn.setCheckable(True)
+        show_sd_btn.setFixedWidth(60)
+        show_sd_btn.toggled.connect(
+            lambda on: self.sessdata_edit.setEchoMode(
+                QLineEdit.EchoMode.Normal if on else QLineEdit.EchoMode.Password
+            )
+        )
+        bili_row.addWidget(show_sd_btn)
+        save_sd_btn = QPushButton("Save")
+        save_sd_btn.setFixedWidth(60)
+        save_sd_btn.clicked.connect(self._save_sessdata)
+        bili_row.addWidget(save_sd_btn)
+        layout.addLayout(bili_row)
+
         # Output directory
         row3 = QHBoxLayout()
         row3.addWidget(_label("Output Dir"))
@@ -178,8 +202,14 @@ class SettingsPage(QWidget):
         keys = conf.get("api_keys", {})
         self.key_edit.setText(keys.get(provider, ""))
         self.base_url_edit.setText(conf.get("base_url", ""))
+        self.sessdata_edit.setText(conf.get("bilibili_sessdata", ""))
         self.output_edit.setText(conf.get("output_dir", str(cfg.summaries_dir())))
         self._on_provider_changed(provider)
+
+    def _save_sessdata(self):
+        conf = cfg.load()
+        conf["bilibili_sessdata"] = self.sessdata_edit.text().strip()
+        cfg.save(conf)
 
     def _on_provider_changed(self, provider: str):
         conf = cfg.load()

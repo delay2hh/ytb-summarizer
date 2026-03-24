@@ -28,6 +28,22 @@ def is_playlist_url(url: str) -> bool:
     return extract_playlist_id(url) is not None and "list=" in url
 
 
+def is_bilibili_url(url: str) -> bool:
+    """Return True if the URL points to a Bilibili video."""
+    return "bilibili.com" in url or "b23.tv" in url
+
+
+def extract_bilibili_bvid(url: str) -> str | None:
+    """Extract BV ID or av ID from a Bilibili URL."""
+    match = re.search(r"/video/(BV\w+)", url)
+    if match:
+        return match.group(1)
+    match = re.search(r"/video/(av\d+)", url)
+    if match:
+        return match.group(1)
+    return None
+
+
 def sanitize_filename(name: str) -> str:
     """Replace characters not safe for filenames."""
     name = re.sub(r'[<>:"/\\|?*]', "_", name)
