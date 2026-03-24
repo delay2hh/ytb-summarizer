@@ -126,69 +126,88 @@ def _get_bilibili_video_info(url: str, sessdata: str = "") -> dict:
 
 def _fetch_bilibili_transcript(url: str, sessdata: str = "") -> str:
     """
-    Fetch Bilibili subtitle via yt-dlp (no download) + requests.
-    Priority: zh-Hans > zh > ai-zh > en > any available.
-    Supports json3 format and BCC format.
+    Fetch Bilibili subtitle via Bilibili's player API + requests.
+    Flow: pagelist → player/v2 (with SESSDATA cookie) → download BCC subtitle file.
+    Priority: zh-Hans > zh-CN > zh > ai-zh > en > any.
     """
-    import yt_dlp
     import requests
+    from .utils import extract_bilibili_bvid
 
-    headers = {}
+    bvid = extract_bilibili_bvid(url)
+    if not bvid:
+        # For short URLs (b23.tv), resolve via yt-dlp first
+        import yt_dlp
+        with yt_dlp.YoutubeDL({"quiet": True, "skip_download": True}) as ydl:
+            info = ydl.extract_info(url, download=False)
+            bvid = info.get("id", "")
+        if not bvid:
+            raise ValueError(f"无法解析 B 站视频 ID: {url}")
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Referer": f"https://www.bilibili.com/video/{bvid}",
+    }
     if sessdata:
         headers["Cookie"] = f"SESSDATA={sessdata}"
 
-    ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "skip_download": True,
-        "http_headers": headers,
-    }
+    # Step 1: Get CID (content part ID)
+    r1 = requests.get(
+        f"https://api.bilibili.com/x/player/pagelist?bvid={bvid}",
+        headers=headers, timeout=15,
+    )
+    r1.raise_for_status()
+    d1 = r1.json()
+    if d1.get("code") != 0 or not d1.get("data"):
+        raise RuntimeError(f"获取视频分P信息失败: {d1.get('message', '未知错误')}")
+    cid = d1["data"][0]["cid"]
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
+    # Step 2: Get subtitle list from player/v2
+    r2 = requests.get(
+        f"https://api.bilibili.com/x/player/v2?bvid={bvid}&cid={cid}",
+        headers=headers, timeout=15,
+    )
+    r2.raise_for_status()
+    d2 = r2.json()
+    player_data = d2.get("data", {})
+    subtitle_info = player_data.get("subtitle", {})
+    subtitles = subtitle_info.get("subtitles", [])
+    need_login = player_data.get("need_login_subtitle", False)
 
-    # Collect all available subtitles (manual subtitles override auto-generated)
-    auto_caps = info.get("automatic_captions") or {}
-    subtitles = info.get("subtitles") or {}
-    all_subs: dict = {**auto_caps, **subtitles}
-
-    if not all_subs:
+    if not subtitles:
+        if need_login and not sessdata:
+            raise RuntimeError(
+                "该视频字幕需要登录才能获取。\n"
+                "请在 Settings → B站 SESSDATA 中填入你的 Cookie 后重试。"
+            )
+        if need_login and sessdata:
+            raise RuntimeError(
+                "SESSDATA 无效或已过期，请重新获取。\n"
+                "浏览器登录 B 站 → F12 → Application → Cookies → 复制 SESSDATA 的值。"
+            )
         raise RuntimeError(
-            "该视频没有字幕。B 站 AI 字幕需要大会员账号的 SESSDATA，请在 Settings 中填写后重试。"
+            "该视频暂无字幕（B 站 AI 字幕由系统自动生成，部分视频尚未支持）。"
         )
 
-    # Choose best language
-    preferred = ["zh-Hans", "zh", "zh-CN", "zh-Hant", "ai-zh", "en"]
-    chosen = next((l for l in preferred if l in all_subs), next(iter(all_subs)))
+    # Step 3: Choose best subtitle language
+    preferred = ["zh-Hans", "zh-CN", "zh", "ai-zh", "en"]
+    chosen = next(
+        (s for lang in preferred for s in subtitles if s.get("lan") == lang),
+        subtitles[0],
+    )
 
-    # Find a downloadable subtitle URL
-    sub_url = None
-    for entry in all_subs[chosen]:
-        if entry.get("url"):
-            sub_url = entry["url"]
-            break
-
+    # Step 4: Download subtitle file (BCC JSON)
+    sub_url = chosen.get("subtitle_url", "")
+    if sub_url.startswith("//"):
+        sub_url = "https:" + sub_url
     if not sub_url:
-        raise RuntimeError(f"未找到可下载的字幕链接 (语言: {chosen})")
+        raise RuntimeError("未找到字幕下载链接")
 
-    resp = requests.get(sub_url, headers=headers, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
+    r3 = requests.get(sub_url, headers=headers, timeout=30)
+    r3.raise_for_status()
+    bcc = r3.json()
 
-    # Parse json3 format (YouTube-style, used by yt-dlp for bilibili)
-    if "events" in data:
-        texts = [
-            seg["utf8"]
-            for event in data["events"]
-            for seg in event.get("segs", [])
-            if seg.get("utf8", "").strip()
-        ]
-    # Parse BCC format (Bilibili native)
-    elif "body" in data:
-        texts = [item["content"] for item in data["body"] if item.get("content")]
-    else:
-        raise RuntimeError(f"未知字幕格式，字段: {list(data.keys())}")
-
+    # Parse BCC format: {"body": [{"content": "text", "from": 0.0, "to": 1.5}, ...]}
+    texts = [item["content"] for item in bcc.get("body", []) if item.get("content")]
     if not texts:
         raise RuntimeError("字幕内容为空")
 
